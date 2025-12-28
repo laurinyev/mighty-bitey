@@ -47,13 +47,20 @@ pub fn build(app: &gtk4::Application) -> ApplicationWindow{
 
     let act_open = ActionEntryBuilder::new("open")
         .activate(|win: &ApplicationWindow ,_ ,_| {
+            let filter = FileFilter::new();
+
+            filter.set_name(Some("Mother 3 ROMs (*.gba)"));
+            filter.add_pattern("*.gba");
+
             let dia = FileChooserNative::builder()
                     .action(FileChooserAction::Open)
                     .build();
 
+            dia.add_filter(&filter);
+
             dia.connect_response(|d,r| {
                 if r == ResponseType::Accept {
-                    println!("{:?}",d.file());
+                    println!("{:?}",d.file().expect("no file wtf").path());
                 } else {
                     println!("Cancelled")
                 }
