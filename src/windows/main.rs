@@ -23,7 +23,7 @@ fn build_menu_model() -> MenuModel {
 fn make_content(app: &gtk4::Application) -> gtk4::Box {
     let menubar = PopoverMenuBar::from_model(Some(&build_menu_model()));
 
-    let lab = Label::new(Some("Welcome to the Mighty Bitey ROM editor\nPlrease load a valid Mother 3 ROM"));
+    let lab = Label::new(Some("Welcome to the Mighty Bitey ROM editor\nNothing to see here lul"));
     lab.set_vexpand(true);
     lab.set_justify(Justification::Center);
 
