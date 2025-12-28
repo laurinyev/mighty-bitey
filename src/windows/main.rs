@@ -54,6 +54,7 @@ pub fn build(app: &gtk4::Application) -> ApplicationWindow{
 
             let dia = FileChooserNative::builder()
                     .action(FileChooserAction::Open)
+                    .title("Open a ROM")
                     .build();
 
             dia.add_filter(&filter);
