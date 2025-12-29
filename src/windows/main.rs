@@ -1,4 +1,6 @@
-use gtk4::{gio::*, glib::*, prelude::*, *};
+use gtk4::{gio::*, prelude::*, *};
+
+use crate::project::*;
 
 mod actions {
     use gtk4::{gio::*, glib::*, prelude::*, *};
@@ -139,19 +141,23 @@ fn make_content_unloaded() -> gtk4::Label {
     return lab;
 }
 
-fn make_content_loaded() -> gtk4::Box {
-    let toret = gtk4::Box::new(Orientation::Horizontal, 10);
-
+fn make_left_pane(app: gtk4::Application) -> gtk4::ListView {
     let factory = SignalListItemFactory::new();
 
-    factory.connect_bind(|_, item| {
+    let store = gio::ListStore::new::<StringObject>();
+    let app_clone = app.clone();
+    factory.connect_bind(move |_, item| {
         let string = item.item().unwrap().downcast::<StringObject>().unwrap().string();
 
         if string != "" {
             let label = Label::new(None);
-            item.connect_selected_notify(|a| {
+            let app_clone2 = app_clone.clone();
+            item.connect_selected_notify(move |a| {
+                let proj = &mut get_proj_mut(&app_clone2);
                 if a.is_selected() {
-                    println!("selected {}!",a.child().expect("no child?").downcast::<Label>().expect("no downcast3?").text())
+                    proj.properties_display.as_ref().expect("no prop display :(").set_visible_child_name("select");
+                } else {
+                    proj.properties_display.as_ref().expect("no prop display :(").set_visible_child_name("unselect");
                 }
             });
 
@@ -164,42 +170,73 @@ fn make_content_loaded() -> gtk4::Box {
             butt.set_label("New Change");
             butt.set_halign(Align::Center);
 
+            let app_clone2 = app_clone.clone();
+            butt.connect_clicked(move |_| {
+                let proj = &mut get_proj_mut(&app_clone2);
+                proj.add_change(&Change 
+                    { 
+                        name: "Test change".to_string(),
+                        change: ChangeTypeDontUseCuzItsMeantToBeAnonym::Dummy
+                    });
+            });
+
             item.set_child(Some(&butt));
         }
     });
 
-    let store = gio::ListStore::new::<StringObject>();
-
-    store.append(&StringObject::new("There"));
-    store.append(&StringObject::new("Will"));
-    store.append(&StringObject::new("Be"));
-    store.append(&StringObject::new("Changes"));
-    store.append(&StringObject::new("Here"));
-    store.append(&StringObject::new(""));
+    {
+        let proj = &mut get_proj_mut(&app);
+        for c in &proj.changes {
+            store.append(&StringObject::new(c.name.as_str()));
+        }
+        store.append(&StringObject::new(""));
+        proj.changes_display = Some(store.clone());
+    }
 
     let smodel: SelectionModel = SingleSelection::new(Some(store)).into();
 
-    let right = gtk4::Box::new(Orientation::Horizontal, 10);
-
-    right.append(&make_content_unloaded());
-
     let left = ListView::new(Some(smodel),Some(factory));
 
-    left.set_hexpand(true);
+    left.set_width_request(300);
     left.set_vexpand(true);
 
-    toret.append(&left);
-    toret.append(&right);
+    return left;
+}
 
-    //connnect the tab switch event
-    toret.connect_map(move |_ob| {
-        println!("laoded :3");
-    });
+fn make_right_pane(app: gtk4::Application) -> gtk4::Stack {
+    let toret = Stack::new();
+
+    let unselect = Label::new(Some("Nothing selected :P"));
+    unselect.set_vexpand(true);
+    unselect.set_halign(Align::Center);
+
+    let select = Label::new(Some("Something selected xD"));
+    select.set_vexpand(true);
+    select.set_halign(Align::Center);
+
+    toret.add_named(&unselect, Some("unselect"));
+    toret.add_named(&select, Some("select"));
+
+    toret.set_visible_child_name("unselect");
+
+    {
+        let proj = &mut get_proj_mut(&app);
+        proj.properties_display = Some(toret.clone());
+    }
 
     return toret;
 }
 
-fn make_content(_: &gtk4::Application) -> gtk4::Box {
+fn make_content_loaded(app: &gtk4::Application) -> gtk4::Box {
+    let toret = gtk4::Box::new(Orientation::Horizontal, 10);
+
+    toret.append(&make_left_pane(app.clone()));
+    toret.append(&make_right_pane(app.clone()));
+
+    return toret;
+}
+
+fn make_content(app: &gtk4::Application) -> gtk4::Box {
     let menubar = PopoverMenuBar::from_model(Some(&build_menu_model()));
 
     let winchild = gtk4::Box::new(Orientation::Vertical, 0);
@@ -207,7 +244,7 @@ fn make_content(_: &gtk4::Application) -> gtk4::Box {
     winchild.set_vexpand(true);
 
     let content_unloaded = make_content_unloaded();
-    let content_loaded   = make_content_loaded();
+    let content_loaded   = make_content_loaded(app);
 
     let stack = gtk4::Stack::new();
 

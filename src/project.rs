@@ -1,16 +1,16 @@
-use std::{cell::RefCell, rc::Rc, sync::OnceLock};
+use std::{cell::RefCell, sync::OnceLock};
 
-use gtk4::{Application, glib::object::ObjectExt};
+use gtk4::{gio::prelude::*, *};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ChangeTypeDontUseCuzItsMeantToBeAnonym {
-    //todo: cange types
+    Dummy //for testinf, still TODO
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Change {
-    name: String,
-    change: ChangeTypeDontUseCuzItsMeantToBeAnonym
+    pub name: String,
+    pub change: ChangeTypeDontUseCuzItsMeantToBeAnonym
 }
 
 #[derive(Debug, Default)]
@@ -21,7 +21,9 @@ pub struct Project {
     pub author: Option<String>,
     pub rom_in_hash: Option<String>,
     pub rom_out_name: Option<String>,
-    pub changes: Vec<Change>
+    pub changes: Vec<Change>,
+    pub changes_display: Option<gio::ListStore>,
+    pub properties_display: Option<gtk4::Stack>
 }
 
 impl Project {
@@ -38,6 +40,19 @@ impl Project {
     pub fn is_loaded(&self) -> bool {
         self.loaded
     }
+
+    //TODO: deduplicate names
+    pub fn add_change(&mut self, change: &Change) {
+        if self.loaded {
+            self.changes.push(change.clone());
+            if let Some(changes_display) = &self.changes_display {
+                changes_display.remove(changes_display.n_items() - 1);
+                changes_display.append(&StringObject::new(&change.name));
+                changes_display.append(&StringObject::new(""));
+            }
+        }
+    }
+
 }
 
 //hella not thread safe but make the code *PRETTY*
@@ -51,14 +66,14 @@ pub fn init_proj(){
 }
 
 #[allow(static_mut_refs)]
-pub fn get_proj<'a>(_: &'a Application) -> std::cell::Ref<'a, Project> {
+pub fn get_proj<'a>(_: &'a gtk4::Application) -> std::cell::Ref<'a, Project> {
     unsafe {
         PROJ.get().expect("no project?").borrow()
     }
 }
 
 #[allow(static_mut_refs)]
-pub fn get_proj_mut<'a>(_: &'a Application) -> std::cell::RefMut<'a, Project> {
+pub fn get_proj_mut<'a>(_: &'a gtk4::Application) -> std::cell::RefMut<'a, Project> {
     unsafe {
         PROJ.get().expect("no project?").borrow_mut()
     }
