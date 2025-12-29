@@ -1,4 +1,3 @@
-use std::{rc::*,cell::*};
 use gtk4::{prelude::*, *};
 
 use crate::project::*;
@@ -71,7 +70,7 @@ fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWind
 pub fn build(app: &gtk4::Application,mainwin: &gtk4::ApplicationWindow) -> ApplicationWindow{
     let win = ApplicationWindow::new(app);
 
-    win.set_title(Some("Mighty bitey ROM editor"));
+    win.set_title(Some("Create New Project"));
     win.set_default_width(300);
     win.set_default_height(300);
 

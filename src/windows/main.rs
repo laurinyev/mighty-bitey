@@ -1,4 +1,4 @@
-use gtk4::{gio::*, prelude::*, *};
+use gtk4::{gio::*, glib::*, prelude::*, *};
 
 mod actions {
     use gtk4::{gio::*, glib::*, prelude::*, *};
@@ -139,24 +139,64 @@ fn make_content_unloaded() -> gtk4::Label {
     return lab;
 }
 
-fn make_content_loaded() -> gtk4::Button {
-    let butt = Button::new();
+fn make_content_loaded() -> gtk4::Box {
+    let toret = gtk4::Box::new(Orientation::Horizontal, 10);
 
-    butt.set_label("I am a button that does something via magic");
+    let factory = SignalListItemFactory::new();
 
-    butt.set_halign(Align::Center);
-    butt.set_valign(Align::Center);
+    factory.connect_bind(|_, item| {
+        let string = item.item().unwrap().downcast::<StringObject>().unwrap().string();
 
-    butt.connect_clicked(|_| {
-        println!("How did you do that?!")
+        if string != "" {
+            let label = Label::new(None);
+            item.connect_selected_notify(|a| {
+                if a.is_selected() {
+                    println!("selected {}!",a.child().expect("no child?").downcast::<Label>().expect("no downcast3?").text())
+                }
+            });
+
+            label.set_text(string.as_str());
+
+            item.set_child(Some(&label));
+        } else {
+            let butt = Button::new();
+
+            butt.set_label("New Change");
+            butt.set_halign(Align::Center);
+
+            item.set_child(Some(&butt));
+        }
     });
 
+    let store = gio::ListStore::new::<StringObject>();
+
+    store.append(&StringObject::new("There"));
+    store.append(&StringObject::new("Will"));
+    store.append(&StringObject::new("Be"));
+    store.append(&StringObject::new("Changes"));
+    store.append(&StringObject::new("Here"));
+    store.append(&StringObject::new(""));
+
+    let smodel: SelectionModel = SingleSelection::new(Some(store)).into();
+
+    let right = gtk4::Box::new(Orientation::Horizontal, 10);
+
+    right.append(&make_content_unloaded());
+
+    let left = ListView::new(Some(smodel),Some(factory));
+
+    left.set_hexpand(true);
+    left.set_vexpand(true);
+
+    toret.append(&left);
+    toret.append(&right);
+
     //connnect the tab switch event
-    butt.connect_map(move |_ob| {
+    toret.connect_map(move |_ob| {
         println!("laoded :3");
     });
 
-    return butt;
+    return toret;
 }
 
 fn make_content(_: &gtk4::Application) -> gtk4::Box {
