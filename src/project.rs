@@ -1,6 +1,16 @@
+use std::{cell::RefCell, rc::Rc, sync::OnceLock};
+
+use gtk4::{Application, glib::object::ObjectExt};
+
 #[derive(Debug)]
-pub enum Change {
-    
+pub enum ChangeTypeDontUseCuzItsMeantToBeAnonym {
+    //todo: cange types
+}
+
+#[derive(Debug)]
+pub struct Change {
+    name: String,
+    change: ChangeTypeDontUseCuzItsMeantToBeAnonym
 }
 
 #[derive(Debug, Default)]
@@ -27,5 +37,29 @@ impl Project {
 
     pub fn is_loaded(&self) -> bool {
         self.loaded
+    }
+}
+
+//hella not thread safe but make the code *PRETTY*
+static mut PROJ: OnceLock<RefCell<Project>> = OnceLock::new();
+
+#[allow(static_mut_refs)]
+pub fn init_proj(){
+    unsafe {
+        PROJ.set(RefCell::new(Project::default())).expect("Couldn't initialize project")
+    }
+}
+
+#[allow(static_mut_refs)]
+pub fn get_proj<'a>(_: &'a Application) -> std::cell::Ref<'a, Project> {
+    unsafe {
+        PROJ.get().expect("no project?").borrow()
+    }
+}
+
+#[allow(static_mut_refs)]
+pub fn get_proj_mut<'a>(_: &'a Application) -> std::cell::RefMut<'a, Project> {
+    unsafe {
+        PROJ.get().expect("no project?").borrow_mut()
     }
 }

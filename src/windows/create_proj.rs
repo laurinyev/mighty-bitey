@@ -3,7 +3,7 @@ use gtk4::{prelude::*, *};
 
 use crate::project::*;
 
-fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWindow,proj: Rc<RefCell<Project>>) -> gtk4::Box {
+fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWindow) -> gtk4::Box {
     //main layers
     let winchild = gtk4::Box::new(Orientation::Vertical, 0);
 
@@ -37,14 +37,17 @@ fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWind
     let inp_dir_clone = inp_dir.clone();
 
     cont.connect_clicked(move |_| {
-        proj.borrow_mut().load(
-            &inp_dir_clone.text(),
-            &inp_name_clone.text(),
-            &inp_author_clone.text(),
-            "",
-            "",
-            vec![]
-        );
+        let app = mainwin.application().expect("no application?");
+        {
+            get_proj_mut(&app).load(
+                &inp_dir_clone.text(),
+                &inp_name_clone.text(),
+                &inp_author_clone.text(),
+                "",
+                "",
+                vec![]
+            );
+        }
 
         mainwin.lookup_action("set_state_loaded").expect("faild to get state loader").activate(None);
         popupwin.close();
@@ -65,14 +68,14 @@ fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWind
     return winchild;
 }
 
-pub fn build(app: &gtk4::Application,mainwin: &gtk4::ApplicationWindow,proj: Rc<RefCell<Project>>) -> ApplicationWindow{
+pub fn build(app: &gtk4::Application,mainwin: &gtk4::ApplicationWindow) -> ApplicationWindow{
     let win = ApplicationWindow::new(app);
 
     win.set_title(Some("Mighty bitey ROM editor"));
     win.set_default_width(300);
     win.set_default_height(300);
 
-    let content = make_content(mainwin.clone(),win.clone(),proj);
+    let content = make_content(mainwin.clone(),win.clone());
     win.set_child(Some(&content));
 
     return win;

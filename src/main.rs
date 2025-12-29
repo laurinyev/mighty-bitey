@@ -1,8 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
-
 use gtk4::{prelude::*, *};
 
-use crate::project::Project;
+use crate::project::*;
 
 pub mod windows;
 pub mod project;
@@ -12,10 +10,10 @@ fn main() {
         .application_id("dev.laurinyev.mighty_bitey")
         .build();
 
-    let proj = Rc::new(RefCell::new(Project::default()));
+    init_proj();
 
     app.connect_activate(move |app| {
-        let win = windows::main::build(app,proj.clone());
+        let win = windows::main::build(app);
         win.show();
     });
 

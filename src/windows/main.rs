@@ -1,12 +1,6 @@
-use std::{cell::*,rc::*};
-
 use gtk4::{gio::*, prelude::*, *};
 
-use crate::project::*;
-
 mod actions {
-    use std::{cell::*,rc::*};
-
     use gtk4::{gio::*, glib::*, prelude::*, *};
 
     use crate::{windows::*,project::*};
@@ -52,17 +46,18 @@ mod actions {
         dia.show();
     }
 
-    fn act_new_proj(win: &ApplicationWindow, proj: Rc<RefCell<Project>>) {
+    fn act_new_proj(win: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
         let app = win.application().expect("no app? WTF");
 
-        let sub_win = create_proj::build(&app,&win, proj);
+        let sub_win = create_proj::build(&app,&win);
         sub_win.set_modal(true);
         sub_win.set_transient_for(Some(win));
         sub_win.show();
     }
 
-    fn act_set_state_loaded(win: &ApplicationWindow, _proj: Rc<RefCell<Project>>) {
-        let proj = _proj.borrow();
+    fn act_set_state_loaded(win: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
+        let app = win.application().expect("no application?");
+        let proj = get_proj(&app);
         if proj.is_loaded() {
             println!("Path: {:?}",proj.project_dir);
             println!("Name: {:?}",proj.name);
@@ -88,7 +83,7 @@ mod actions {
         win.set_height_request(650);
     }
 
-    pub fn register(win: &gtk4::ApplicationWindow, proj: Rc<RefCell<Project>>) {
+    pub fn register(win: &gtk4::ApplicationWindow) {
         let act_open_rom: ActionEntry<ApplicationWindow> = ActionEntryBuilder::new("open_rom")
             .activate(act_open_rom)
             .build();
@@ -97,18 +92,14 @@ mod actions {
             .activate(act_open_proj)
             .build();
 
-        let proj_clone1 = proj.clone();
         let act_new_proj = ActionEntryBuilder::new("new_proj")
-            .activate(move |win,_,_| {
-                act_new_proj(win,proj_clone1.clone())
-            })
+            .activate(act_new_proj)
             .build();
-        let proj_clone2 = proj.clone();
+
         let act_set_state_loaded = ActionEntryBuilder::new("set_state_loaded")
-            .activate(move |win,_,_| {
-                act_set_state_loaded(win,proj_clone2.clone())
-            })
+            .activate(act_set_state_loaded)
             .build();
+
         let act_close = ActionEntryBuilder::new("close")
             .activate(|win: &ApplicationWindow ,_ ,_| {
                 win.close();
@@ -191,7 +182,7 @@ fn make_content(_: &gtk4::Application) -> gtk4::Box {
     return winchild;
 }
 
-pub fn build(app: &gtk4::Application, proj: Rc<RefCell<Project>>) -> ApplicationWindow{
+pub fn build(app: &gtk4::Application) -> ApplicationWindow{
     let win = ApplicationWindow::new(app);
 
     win.set_title(Some("Mighty bitey ROM editor"));
@@ -199,7 +190,7 @@ pub fn build(app: &gtk4::Application, proj: Rc<RefCell<Project>>) -> Application
     win.set_default_height(300);
     win.set_show_menubar(true);
 
-    actions::register(&win, proj);
+    actions::register(&win);
 
     let content = make_content(app);
     win.set_child(Some(&content));
