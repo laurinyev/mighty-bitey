@@ -33,13 +33,11 @@ fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWind
     let inp_author_clone = inp_author.clone();
 
     cont.connect_clicked(move |_| {
-        {
-            get_glob_mut().create_proj(
-                &inp_name_clone.text(),
-                &inp_author_clone.text(),
-                ""
-            );
-        }
+        get_glob_mut().create_proj(
+            &inp_name_clone.text(),
+            &inp_author_clone.text(),
+            ""
+        );
 
         mainwin.lookup_action("set_state_loaded").expect("faild to get state loader").activate(None);
         popupwin.close();
