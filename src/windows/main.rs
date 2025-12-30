@@ -66,7 +66,7 @@ mod actions {
             println!("Author: {:?}",proj.author);
             println!("Output ROM name: {:?}",proj.rom_out_name);
 
-            win.set_title(Some(format!("{} - Mighty Bitey ROM editor",proj.name.clone().unwrap_or("".to_string())).as_str()));
+            win.set_title(Some(format!("{} - Mighty-Bitey ROM editor",proj.name.clone().unwrap_or("".to_string())).as_str()));
         } else {
             println!("WARNING! no project loaded, yet set_state_loaded has been called")
         }
@@ -120,21 +120,47 @@ fn build_menu_model() -> MenuModel {
 
     let new = MenuItem::new(Some("New Proj"), Some("win.new_proj"));
     let open = MenuItem::new(Some("Open Proj"), Some("win.open_proj"));
+    let save = MenuItem::new(Some("Save Proj"), None);
     let quit = MenuItem::new(Some("Quit"), Some("win.close"));
 
-    file.append_item(&open);
+    let quitsec = Menu::new();
+
     file.append_item(&new);
-    file.append_item(&quit);
+    file.append_item(&open);
+    file.append_item(&save);
+
+    quitsec.append_item(&quit);
+    file.append_section(None, &quitsec);
+
+    let edit = Menu::new();
+
+    let undo = MenuItem::new(Some("Undo"), None);
+    let redo = MenuItem::new(Some("Redo"), None);
+
+    edit.append_item(&undo);
+    edit.append_item(&redo);
+
+    let export = Menu::new();
+
+    let exp_rom = MenuItem::new(Some("Build ROM"), None);
+    let exp_armips = MenuItem::new(Some("Export Armips script"), None);
+
+    export.append_item(&exp_rom);
+    export.append_item(&exp_armips);
 
     let file_model: MenuModel = file.into();
+    let edit_model: MenuModel = edit.into();
+    let export_model: MenuModel = export.into();
 
-    menu.append_submenu(Some("file"),&file_model);
+    menu.append_submenu(Some("File"),&file_model);
+    menu.append_submenu(Some("Edit"),&edit_model);
+    menu.append_submenu(Some("Export"),&export_model);
 
     return menu.into();
 }
 
 fn make_content_unloaded() -> gtk4::Label {
-    let lab = Label::new(Some("Welcome to the Mighty Bitey ROM editor\nPlease create or open a project"));
+    let lab = Label::new(Some("Welcome to the Mighty-Bitey ROM editor\nPlease create or open a project"));
     lab.set_vexpand(true);
     lab.set_justify(Justification::Center);
 
@@ -227,11 +253,11 @@ fn make_right_pane(app: gtk4::Application) -> gtk4::Stack {
     return toret;
 }
 
-fn make_content_loaded(app: &gtk4::Application) -> gtk4::Box {
-    let toret = gtk4::Box::new(Orientation::Horizontal, 10);
+fn make_content_loaded(app: &gtk4::Application) -> gtk4::Paned {
+    let toret = gtk4::Paned::new(Orientation::Horizontal);
 
-    toret.append(&make_left_pane(app.clone()));
-    toret.append(&make_right_pane(app.clone()));
+    toret.set_start_child(Some(&make_left_pane(app.clone())));
+    toret.set_end_child(Some(&make_right_pane(app.clone())));
 
     return toret;
 }
@@ -262,7 +288,7 @@ fn make_content(app: &gtk4::Application) -> gtk4::Box {
 pub fn build(app: &gtk4::Application) -> ApplicationWindow{
     let win = ApplicationWindow::new(app);
 
-    win.set_title(Some("Mighty bitey ROM editor"));
+    win.set_title(Some("Mighty-bitey ROM editor"));
     win.set_default_width(400);
     win.set_default_height(300);
     win.set_show_menubar(true);
