@@ -10,7 +10,7 @@ fn main() {
         .application_id("dev.laurinyev.mighty_bitey")
         .build();
 
-    init_proj();
+    init_glob();
 
     app.connect_activate(move |app| {
         let win = windows::main::build(app);

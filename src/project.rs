@@ -1,50 +1,57 @@
 use std::{cell::RefCell, sync::OnceLock};
 
 use gtk4::{gio::prelude::*, *};
+use serde::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChangeTypeDontUseCuzItsMeantToBeAnonym {
-    Dummy //for testinf, still TODO
+    Dummy //for testing, still TODO
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Change {
     pub name: String,
     pub change: ChangeTypeDontUseCuzItsMeantToBeAnonym
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Project {
-    loaded: bool,
-    pub project_dir: Option<String>,
     pub name: Option<String>,
     pub author: Option<String>,
     pub rom_in_hash: Option<String>,
-    pub rom_out_name: Option<String>,
     pub changes: Vec<Change>,
+}
+
+#[derive(Debug, Default)]
+pub struct Global {
+    loaded: bool,
+    pub project: Project,
     pub changes_display: Option<gio::ListStore>,
     pub properties_display: Option<gtk4::Stack>
 }
 
-impl Project {
-    pub fn load(&mut self, project_dir: &str, name: &str, author: &str, in_hash: &str, out_name: &str, changes: Vec<Change>) {
-        self.project_dir = Some(project_dir.to_string());
-        self.name = Some(name.to_string());
-        self.author = Some(author.to_string());
-        self.rom_in_hash = Some(in_hash.to_string());
-        self.rom_out_name = Some(out_name.to_string());
-        self.changes = changes;
+impl Global {
+    pub fn create_proj(&mut self, name: &str, author: &str, in_hash: &str) {
+        self.project.name = Some(name.to_string());
+        self.project.author = Some(author.to_string());
+        self.project.rom_in_hash = Some(in_hash.to_string());
+        self.project.changes = vec![];
         self.loaded = true;
     }
 
-    pub fn is_loaded(&self) -> bool {
+    pub fn load(&mut self, proj: Project) {
+        self.project = proj;
+        self.loaded = true;
+    }
+
+    pub fn is_proj_loaded(&self) -> bool {
         self.loaded
     }
 
     //TODO: deduplicate names
     pub fn add_change(&mut self, change: &Change) {
         if self.loaded {
-            self.changes.push(change.clone());
+            self.project.changes.push(change.clone());
             if let Some(changes_display) = &self.changes_display {
                 changes_display.remove(changes_display.n_items() - 1);
                 changes_display.append(&StringObject::new(&change.name));
@@ -56,25 +63,25 @@ impl Project {
 }
 
 //hella not thread safe but make the code *PRETTY*
-static mut PROJ: OnceLock<RefCell<Project>> = OnceLock::new();
+static mut GLOB: OnceLock<RefCell<Global>> = OnceLock::new();
 
 #[allow(static_mut_refs)]
-pub fn init_proj(){
+pub fn init_glob(){
     unsafe {
-        PROJ.set(RefCell::new(Project::default())).expect("Couldn't initialize project")
+        GLOB.set(RefCell::new(Global::default())).expect("Couldn't initialize project")
     }
 }
 
 #[allow(static_mut_refs)]
-pub fn get_proj<'a>(_: &'a gtk4::Application) -> std::cell::Ref<'a, Project> {
+pub fn get_glob<'a>() -> std::cell::Ref<'a, Global> {
     unsafe {
-        PROJ.get().expect("no project?").borrow()
+        GLOB.get().expect("no project?").borrow()
     }
 }
 
 #[allow(static_mut_refs)]
-pub fn get_proj_mut<'a>(_: &'a gtk4::Application) -> std::cell::RefMut<'a, Project> {
+pub fn get_glob_mut<'a>() -> std::cell::RefMut<'a, Global> {
     unsafe {
-        PROJ.get().expect("no project?").borrow_mut()
+        GLOB.get().expect("no project?").borrow_mut()
     }
 }

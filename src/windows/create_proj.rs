@@ -11,8 +11,6 @@ fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWind
     inp_name.set_placeholder_text(Some("Name"));
     let inp_author = Entry::new();
     inp_author.set_placeholder_text(Some("Author"));
-    let inp_dir = Entry::new();
-    inp_dir.set_placeholder_text(Some("Project DIR"));
 
 
     //close button
@@ -33,18 +31,13 @@ fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWind
 
     let inp_name_clone = inp_name.clone();
     let inp_author_clone = inp_author.clone();
-    let inp_dir_clone = inp_dir.clone();
 
     cont.connect_clicked(move |_| {
-        let app = mainwin.application().expect("no application?");
         {
-            get_proj_mut(&app).load(
-                &inp_dir_clone.text(),
+            get_glob_mut().create_proj(
                 &inp_name_clone.text(),
                 &inp_author_clone.text(),
-                "",
-                "",
-                vec![]
+                ""
             );
         }
 
@@ -60,7 +53,6 @@ fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWind
 
     winchild.append(&inp_name);
     winchild.append(&inp_author);
-    winchild.append(&inp_dir);
     winchild.append(&bottombar);
     winchild.set_vexpand(true);
 

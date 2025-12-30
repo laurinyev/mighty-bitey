@@ -23,25 +23,92 @@ mod actions {
         dia.connect_response(|d,r| {
             if r == ResponseType::Accept {
                 println!("{:?}",d.file().expect("no file wtf").path());
-            } else {
-                println!("Cancelled")
             }
         });
 
         dia.show();
     }
 
-    fn act_open_proj(_: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
+    fn act_open_proj(win: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
+        let filter = FileFilter::new();
+
+        filter.set_name(Some("Mighty-Bitey projects (*.mbproj)"));
+        filter.add_pattern("*.mbproj");
+
         let dia = FileChooserNative::builder()
-            .action(FileChooserAction::SelectFolder)
-            .title("Open a project directory")
+            .action(FileChooserAction::Open)
+            .title("Open project")
             .build();
 
-        dia.connect_response(|d,r| {
+        dia.add_filter(&filter);
+
+        let win_clone = win.clone();
+        dia.connect_response(move |d,r| {
             if r == ResponseType::Accept {
-                println!("{:?}",d.file().expect("no file wtf").path());
-            } else {
-                println!("Cancelled")
+                let filename = d.file().expect("no file wtf").path().expect("no path wtf");
+
+                if let Ok(file) = std::fs::File::open(&filename) {
+                    get_glob_mut().load(serde_yaml::from_reader(file).expect("Couldnt't read config"));
+
+                    win_clone.lookup_action("set_state_loaded").expect("faild to get state loader").activate(None);
+
+                    println!("Opened {:?}",filename);
+
+                } else {
+                    println!("Couldn't load project from file \"{filename:?}\"!");
+                }
+            }
+        });
+
+        dia.show();
+    }
+
+    fn act_save_proj(win: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
+        let glob = get_glob();
+
+        if !glob.is_proj_loaded() {
+            let pu = Dialog::with_buttons(Some("Can't save unloaded project"), Some(win), DialogFlags::MODAL, &[("Ok",ResponseType::Ok)]);
+
+            pu.set_width_request(400);
+            pu.set_height_request(100);
+
+            let lab = Label::new(Some("Can't save project because no project is loaded"));
+            lab.set_vexpand(true);
+            lab.set_justify(Justification::Center);
+
+            pu.set_child(Some(&lab));
+
+            pu.show();
+            return;
+        }
+
+        let filter = FileFilter::new();
+
+        filter.set_name(Some("Mighty-Bitey projects (*.mbproj)"));
+        filter.add_pattern("*.mbproj");
+
+        let dia = FileChooserNative::builder()
+            .action(FileChooserAction::Save)
+            .title("Save project")
+            .build();
+
+        dia.set_current_name("project.mbproj");
+        dia.add_filter(&filter);
+
+        dia.connect_response(move |d,r| {
+            if r == ResponseType::Accept {
+                let file = d.file().expect("no file wtf");
+                let str = serde_yaml::to_string(&glob.project).expect("couldnt serialize project");
+
+                let outstream = file
+                    .create(FileCreateFlags::REPLACE_DESTINATION, None::<&Cancellable>)
+                    .expect("no output stream?");
+
+                outstream.write(str.as_bytes(), None::<&Cancellable>).expect("Couldnt write");
+
+                outstream.close(None::<&Cancellable>).expect("couldnt close");
+
+                println!("Saved to {:?}",file.path());
             }
         });
 
@@ -58,15 +125,12 @@ mod actions {
     }
 
     fn act_set_state_loaded(win: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
-        let app = win.application().expect("no application?");
-        let proj = get_proj(&app);
-        if proj.is_loaded() {
-            println!("Path: {:?}",proj.project_dir);
-            println!("Name: {:?}",proj.name);
-            println!("Author: {:?}",proj.author);
-            println!("Output ROM name: {:?}",proj.rom_out_name);
+        let glob = get_glob();
+        if glob.is_proj_loaded() {
+            println!("Name: {:?}",glob.project.name);
+            println!("Author: {:?}",glob.project.author);
 
-            win.set_title(Some(format!("{} - Mighty-Bitey ROM editor",proj.name.clone().unwrap_or("".to_string())).as_str()));
+            win.set_title(Some(format!("{} - Mighty-Bitey ROM editor",glob.project.name.clone().unwrap_or("".to_string())).as_str()));
         } else {
             println!("WARNING! no project loaded, yet set_state_loaded has been called")
         }
@@ -94,6 +158,10 @@ mod actions {
             .activate(act_open_proj)
             .build();
 
+        let act_save_proj: ActionEntry<ApplicationWindow> = ActionEntryBuilder::new("save_proj")
+            .activate(act_save_proj)
+            .build();
+
         let act_new_proj = ActionEntryBuilder::new("new_proj")
             .activate(act_new_proj)
             .build();
@@ -108,7 +176,7 @@ mod actions {
             })
             .build();
 
-        win.add_action_entries([act_close,act_new_proj,act_open_rom,act_open_proj,act_set_state_loaded]);
+        win.add_action_entries([act_close,act_new_proj,act_open_rom,act_save_proj,act_open_proj,act_set_state_loaded]);
     }
 
 }
@@ -120,7 +188,7 @@ fn build_menu_model() -> MenuModel {
 
     let new = MenuItem::new(Some("New Proj"), Some("win.new_proj"));
     let open = MenuItem::new(Some("Open Proj"), Some("win.open_proj"));
-    let save = MenuItem::new(Some("Save Proj"), None);
+    let save = MenuItem::new(Some("Save Proj"), Some("win.save_proj"));
     let quit = MenuItem::new(Some("Quit"), Some("win.close"));
 
     let quitsec = Menu::new();
@@ -167,23 +235,21 @@ fn make_content_unloaded() -> gtk4::Label {
     return lab;
 }
 
-fn make_left_pane(app: gtk4::Application) -> gtk4::ListView {
+fn make_left_pane() -> gtk4::ListView {
     let factory = SignalListItemFactory::new();
 
     let store = gio::ListStore::new::<StringObject>();
-    let app_clone = app.clone();
     factory.connect_bind(move |_, item| {
         let string = item.item().unwrap().downcast::<StringObject>().unwrap().string();
 
         if string != "" {
             let label = Label::new(None);
-            let app_clone2 = app_clone.clone();
             item.connect_selected_notify(move |a| {
-                let proj = &mut get_proj_mut(&app_clone2);
+                let glob = &mut get_glob_mut();
                 if a.is_selected() {
-                    proj.properties_display.as_ref().expect("no prop display :(").set_visible_child_name("select");
+                    glob.properties_display.as_ref().expect("no prop display :(").set_visible_child_name("select");
                 } else {
-                    proj.properties_display.as_ref().expect("no prop display :(").set_visible_child_name("unselect");
+                    glob.properties_display.as_ref().expect("no prop display :(").set_visible_child_name("unselect");
                 }
             });
 
@@ -196,10 +262,9 @@ fn make_left_pane(app: gtk4::Application) -> gtk4::ListView {
             butt.set_label("New Change");
             butt.set_halign(Align::Center);
 
-            let app_clone2 = app_clone.clone();
             butt.connect_clicked(move |_| {
-                let proj = &mut get_proj_mut(&app_clone2);
-                proj.add_change(&Change 
+                let glob = &mut get_glob_mut();
+                glob.add_change(&Change 
                     { 
                         name: "Test change".to_string(),
                         change: ChangeTypeDontUseCuzItsMeantToBeAnonym::Dummy
@@ -211,12 +276,12 @@ fn make_left_pane(app: gtk4::Application) -> gtk4::ListView {
     });
 
     {
-        let proj = &mut get_proj_mut(&app);
-        for c in &proj.changes {
+        let glob = &mut get_glob_mut();
+        for c in &glob.project.changes {
             store.append(&StringObject::new(c.name.as_str()));
         }
         store.append(&StringObject::new(""));
-        proj.changes_display = Some(store.clone());
+        glob.changes_display = Some(store.clone());
     }
 
     let smodel: SelectionModel = SingleSelection::new(Some(store)).into();
@@ -229,7 +294,7 @@ fn make_left_pane(app: gtk4::Application) -> gtk4::ListView {
     return left;
 }
 
-fn make_right_pane(app: gtk4::Application) -> gtk4::Stack {
+fn make_right_pane() -> gtk4::Stack {
     let toret = Stack::new();
 
     let unselect = Label::new(Some("Nothing selected :P"));
@@ -246,23 +311,23 @@ fn make_right_pane(app: gtk4::Application) -> gtk4::Stack {
     toret.set_visible_child_name("unselect");
 
     {
-        let proj = &mut get_proj_mut(&app);
-        proj.properties_display = Some(toret.clone());
+        let glob = &mut get_glob_mut();
+        glob.properties_display = Some(toret.clone());
     }
 
     return toret;
 }
 
-fn make_content_loaded(app: &gtk4::Application) -> gtk4::Paned {
+fn make_content_loaded() -> gtk4::Paned {
     let toret = gtk4::Paned::new(Orientation::Horizontal);
 
-    toret.set_start_child(Some(&make_left_pane(app.clone())));
-    toret.set_end_child(Some(&make_right_pane(app.clone())));
+    toret.set_start_child(Some(&make_left_pane()));
+    toret.set_end_child(Some(&make_right_pane()));
 
     return toret;
 }
 
-fn make_content(app: &gtk4::Application) -> gtk4::Box {
+fn make_content() -> gtk4::Box {
     let menubar = PopoverMenuBar::from_model(Some(&build_menu_model()));
 
     let winchild = gtk4::Box::new(Orientation::Vertical, 0);
@@ -270,7 +335,7 @@ fn make_content(app: &gtk4::Application) -> gtk4::Box {
     winchild.set_vexpand(true);
 
     let content_unloaded = make_content_unloaded();
-    let content_loaded   = make_content_loaded(app);
+    let content_loaded   = make_content_loaded();
 
     let stack = gtk4::Stack::new();
 
@@ -295,7 +360,7 @@ pub fn build(app: &gtk4::Application) -> ApplicationWindow{
 
     actions::register(&win);
 
-    let content = make_content(app);
+    let content = make_content();
     win.set_child(Some(&content));
 
     return win;
