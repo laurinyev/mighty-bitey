@@ -48,7 +48,7 @@ mod actions {
                 let filename = d.file().expect("no file wtf").path().expect("no path wtf");
 
                 if let Ok(file) = std::fs::File::open(&filename) {
-                    get_glob_mut().load(serde_yaml::from_reader(file).expect("Couldnt't read config"));
+                    get_glob().load(serde_yaml::from_reader(file).expect("Couldnt't read config"));
 
                     win_clone.lookup_action("set_state_loaded").expect("faild to get state loader").activate(None);
 
@@ -100,6 +100,11 @@ mod actions {
                 let file = d.file().expect("no file wtf");
                 let str = serde_yaml::to_string(&glob.project).expect("couldnt serialize project");
 
+                // the GTK devs can go to hell for making .create ignore REPLACE_DESTINATION
+                if file.query_exists(None::<&Cancellable>) {
+                    file.delete(None::<&Cancellable>).expect("Failed to delete file");
+                }
+
                 let outstream = file
                     .create(FileCreateFlags::REPLACE_DESTINATION, None::<&Cancellable>)
                     .expect("no output stream?");
@@ -125,15 +130,28 @@ mod actions {
     }
 
     fn act_set_state_loaded(win: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
-        let glob = get_glob();
-        if glob.is_proj_loaded() {
-            println!("Name: {:?}",glob.project.name);
-            println!("Author: {:?}",glob.project.author);
-
-            win.set_title(Some(format!("{} - Mighty-Bitey ROM editor",glob.project.name.clone().unwrap_or("".to_string())).as_str()));
-        } else {
-            println!("WARNING! no project loaded, yet set_state_loaded has been called")
+        //drop glob so it doesnt interfere with anything
+        {
+            let glob = get_glob();
+            if glob.is_proj_loaded() {
+                println!("Name: {:?}",glob.project.name);
+                println!("Author: {:?}",glob.project.author);
+                win.set_title(Some(format!("{} - Mighty-Bitey ROM editor",glob.project.name.clone().unwrap_or("".to_string())).as_str()));
+            } else {
+                println!("WARNING! no project loaded, yet set_state_loaded has been called")
+            }
         }
+
+        //HACK: jiggle it around to make sure its remapped
+        win.child()
+            .expect("no child?")
+            .downcast::<gtk4::Box>()
+            .expect("no downcast?")
+            .last_child()
+            .expect("no last child?")
+            .downcast::<gtk4::Stack>()
+            .expect("no downcast2?")
+            .set_visible_child_name("unloaded");
 
         win.child()
             .expect("no child?")
@@ -235,7 +253,7 @@ fn make_content_unloaded() -> gtk4::Label {
     return lab;
 }
 
-fn make_left_pane() -> gtk4::ListView {
+fn make_left_pane() -> gtk4::ScrolledWindow {
     let factory = SignalListItemFactory::new();
 
     let store = gio::ListStore::new::<StringObject>();
@@ -244,12 +262,24 @@ fn make_left_pane() -> gtk4::ListView {
 
         if string != "" {
             let label = Label::new(None);
-            item.connect_selected_notify(move |a| {
-                let glob = &mut get_glob_mut();
-                if a.is_selected() {
-                    glob.properties_display.as_ref().expect("no prop display :(").set_visible_child_name("select");
-                } else {
-                    glob.properties_display.as_ref().expect("no prop display :(").set_visible_child_name("unselect");
+            item.connect_selected_notify(move |i| {
+                if i.is_selected() {
+                    let propdisplay : gtk4::Stack; 
+                    {
+                        let mut glob = get_glob();
+
+                        let string = i.item().unwrap().downcast::<StringObject>().unwrap().string();
+                        let change = glob.search_change(&string).unwrap();
+                        let idx = glob.project.changes.iter().position(|a| a == change);
+                        glob.selected_change_idx = idx;
+                        println!("{idx:?}");
+
+                        propdisplay = glob.properties_display.as_ref().unwrap().clone();
+                    }
+
+                    //HACK: jiggle it around to make it reload 
+                    propdisplay.set_visible_child_name("unselect");
+                    propdisplay.set_visible_child_name("select");
                 }
             });
 
@@ -263,55 +293,132 @@ fn make_left_pane() -> gtk4::ListView {
             butt.set_halign(Align::Center);
 
             butt.connect_clicked(move |_| {
-                let glob = &mut get_glob_mut();
-                glob.add_change(&Change 
-                    { 
-                        name: "Test change".to_string(),
+                let mut glob = get_glob();
+                let name = format!("Change #{}",glob.project.changes.len());
+
+                glob.add_change(
+                    &Change {
+                        name: name,
                         change: ChangeTypeDontUseCuzItsMeantToBeAnonym::Dummy
-                    });
+                    }
+                );
             });
 
             item.set_child(Some(&butt));
         }
     });
 
-    {
-        let glob = &mut get_glob_mut();
+    let smodel: SelectionModel = SingleSelection::builder()
+        .model(&store)
+        .autoselect(false)
+        .build()
+        .into();
+
+    let pane = ListView::new(Some(smodel),Some(factory));
+
+    //repopulate on reload
+    pane.connect_map(move |_| {
+        //delete all in the list
+        store.remove_all();
+
+        //add all registered changes
+        let mut glob = get_glob();
         for c in &glob.project.changes {
             store.append(&StringObject::new(c.name.as_str()));
         }
         store.append(&StringObject::new(""));
         glob.changes_display = Some(store.clone());
+    });
+
+    return ScrolledWindow::builder()
+        .hscrollbar_policy(PolicyType::Never)
+        .child(&pane)
+        .build();
+}
+
+fn make_properties_pane() -> gtk4::Box {
+    let props = gtk4::Box::new(Orientation::Vertical, 0);
+
+    //top bar: renaming and removing changes
+    let topbar = gtk4::Box::new(Orientation::Horizontal, 10);
+    {
+        let namefield = Entry::new();
+        namefield.set_placeholder_text(Some("Name"));
+        namefield.set_hexpand(true);
+        topbar.append(&namefield);
+
+        namefield.connect_map(|f| {
+            let glob = get_glob();
+            f.set_text(&glob.project.changes[glob.selected_change_idx.unwrap()].name);
+        });
+
+        let rename_butt = Button::new();
+        rename_butt.set_label("Rename");
+        topbar.append(&rename_butt);
+
+        rename_butt.connect_clicked(move |b| {
+            let win = b
+                .root()
+                .unwrap()
+                .downcast::<ApplicationWindow>()
+                .unwrap();
+
+            {
+                let mut glob = get_glob();
+                let idx = glob.selected_change_idx.unwrap();
+
+                glob.project.changes[idx].name = namefield.text().to_string();
+            }
+
+            win.lookup_action("set_state_loaded").expect("faild to get state loader").activate(None);
+        });
+
+        let delete_butt = Button::new();
+        delete_butt.set_label("Delete");
+
+        delete_butt.connect_clicked(|b| {
+            let win = b
+                .root()
+                .unwrap()
+                .downcast::<ApplicationWindow>()
+                .unwrap();
+
+            {
+                let mut glob = get_glob();
+                let idx = glob.selected_change_idx.unwrap();
+                glob.delete_change(idx);
+
+                //get out of the properties panel
+                glob.properties_display.as_ref().unwrap().set_visible_child_name("unselect");
+            }
+
+            win.lookup_action("set_state_loaded").expect("faild to get state loader").activate(None);
+        });
+
+        topbar.append(&delete_butt);
     }
 
-    let smodel: SelectionModel = SingleSelection::new(Some(store)).into();
+    props.append(&topbar);
 
-    let left = ListView::new(Some(smodel),Some(factory));
-
-    left.set_width_request(300);
-    left.set_vexpand(true);
-
-    return left;
+    return props;
 }
 
 fn make_right_pane() -> gtk4::Stack {
     let toret = Stack::new();
 
-    let unselect = Label::new(Some("Nothing selected :P"));
+    let unselect = Label::new(Some("Nothing selected\nPlease click on a change to select it!"));
     unselect.set_vexpand(true);
     unselect.set_halign(Align::Center);
+    unselect.set_justify(Justification::Center);
 
-    let select = Label::new(Some("Something selected xD"));
-    select.set_vexpand(true);
-    select.set_halign(Align::Center);
+    let select = make_properties_pane();
 
     toret.add_named(&unselect, Some("unselect"));
     toret.add_named(&select, Some("select"));
 
     toret.set_visible_child_name("unselect");
-
     {
-        let glob = &mut get_glob_mut();
+        let mut glob = get_glob();
         glob.properties_display = Some(toret.clone());
     }
 
