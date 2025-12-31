@@ -1,13 +1,13 @@
 use gtk4::{gio::*, prelude::*, *};
 
-use crate::project::*;
+use crate::global::*;
 
 mod actions {
     use gtk4::{gio::*, glib::*, prelude::*, *};
 
-    use crate::{windows::*,project::*};
+    use crate::{global::*, patching::baserom::Baserom, windows::*};
 
-    fn act_open_rom(_: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
+    fn act_open_rom(win: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
         let filter = FileFilter::new();
 
         filter.set_name(Some("Mother 3 ROMs (*.gba)"));
@@ -20,9 +20,34 @@ mod actions {
 
         dia.add_filter(&filter);
 
-        dia.connect_response(|d,r| {
+        let win_clone = win.clone();
+        dia.connect_response(move |d,r| {
             if r == ResponseType::Accept {
-                println!("{:?}",d.file().expect("no file wtf").path());
+                let filename = d.file().expect("no file wtf").path().expect("no path wtf");
+
+                {
+                    let mut glob = get_glob();
+                    let baserom = Baserom::load(filename.to_str().unwrap(), &glob.project.as_ref().unwrap().baserom_type); 
+                    glob.baserom = Some(baserom.clone());
+
+                    if baserom.hash != glob.project.as_ref().unwrap().baserom_type.get_expected_hash() {
+                        let resp = alerta::alerta()
+                            .title("Base ROM hash mismatch")
+                            .message(
+                                format!(
+                                    "Base ROM hash \"{}\" doesnt match expected hash for input ROM of type {:?}",
+                                    baserom.hash,
+                                    glob.project.as_ref().unwrap().baserom_type
+                                )
+                            )
+                            .icon(alerta::Icon::Warning)
+                            .button_preset(alerta::ButtonPreset::Ok)
+                            .show()
+                            .expect("Couldn't show popup");
+                    }
+                }
+
+                win_clone.lookup_action("set_state_loaded").expect("faild to get state loader").activate(None);
             }
         });
 
@@ -47,12 +72,22 @@ mod actions {
             if r == ResponseType::Accept {
                 let filename = d.file().expect("no file wtf").path().expect("no path wtf");
 
+                let resp = alerta::alerta()
+                    .title("Base ROM")
+                    .message("You must load a base ROM for supplying default assets/values!")
+                    .icon(alerta::Icon::Info)
+                    .button_preset(alerta::ButtonPreset::OkCancel)
+                    .show()
+                    .expect("Couldn't show popup");
+
+                if resp == alerta::Answer::Button(1) { // 1 = cancel button
+                    return;
+                }
+
                 if let Ok(file) = std::fs::File::open(&filename) {
                     get_glob().load(serde_yaml::from_reader(file).expect("Couldnt't read config"));
 
-                    win_clone.lookup_action("set_state_loaded").expect("faild to get state loader").activate(None);
-
-                    println!("Opened {:?}",filename);
+                    win_clone.lookup_action("open_rom").expect("faild to get state loader").activate(None);
 
                 } else {
                     println!("Couldn't load project from file \"{filename:?}\"!");
@@ -63,22 +98,18 @@ mod actions {
         dia.show();
     }
 
-    fn act_save_proj(win: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
+    fn act_save_proj(_: &ApplicationWindow,_: &SimpleAction,_: Option<&Variant>) {
         let glob = get_glob();
 
         if !glob.is_proj_loaded() {
-            let pu = Dialog::with_buttons(Some("Can't save unloaded project"), Some(win), DialogFlags::MODAL, &[("Ok",ResponseType::Ok)]);
+            alerta::alerta()
+                .title("Saving")
+                .message("No project loaded")
+                .icon(alerta::Icon::Error)
+                .button_preset(alerta::ButtonPreset::Ok)
+                .show()
+                .expect("Couldn't show popup");
 
-            pu.set_width_request(400);
-            pu.set_height_request(100);
-
-            let lab = Label::new(Some("Can't save project because no project is loaded"));
-            lab.set_vexpand(true);
-            lab.set_justify(Justification::Center);
-
-            pu.set_child(Some(&lab));
-
-            pu.show();
             return;
         }
 
@@ -134,9 +165,11 @@ mod actions {
         {
             let glob = get_glob();
             if glob.is_proj_loaded() {
-                println!("Name: {:?}",glob.project.name);
-                println!("Author: {:?}",glob.project.author);
-                win.set_title(Some(format!("{} - Mighty-Bitey ROM editor",glob.project.name.clone().unwrap_or("".to_string())).as_str()));
+                win.set_title(
+                    Some(format!("{} - Mighty-Bitey ROM editor",
+                        glob.project.as_ref().unwrap().name.clone()
+                    ).as_str())
+                );
             } else {
                 println!("WARNING! no project loaded, yet set_state_loaded has been called")
             }
@@ -270,9 +303,8 @@ fn make_left_pane() -> gtk4::ScrolledWindow {
 
                         let string = i.item().unwrap().downcast::<StringObject>().unwrap().string();
                         let change = glob.search_change(&string).unwrap();
-                        let idx = glob.project.changes.iter().position(|a| a == change);
+                        let idx = glob.project.as_ref().unwrap().changes.iter().position(|a| a == change);
                         glob.selected_change_idx = idx;
-                        println!("{idx:?}");
 
                         propdisplay = glob.properties_display.as_ref().unwrap().clone();
                     }
@@ -294,7 +326,7 @@ fn make_left_pane() -> gtk4::ScrolledWindow {
 
             butt.connect_clicked(move |_| {
                 let mut glob = get_glob();
-                let name = format!("Change #{}",glob.project.changes.len());
+                let name = format!("Change #{}",glob.project.as_ref().unwrap().changes.len());
 
                 glob.add_change(
                     &Change {
@@ -323,7 +355,7 @@ fn make_left_pane() -> gtk4::ScrolledWindow {
 
         //add all registered changes
         let mut glob = get_glob();
-        for c in &glob.project.changes {
+        for c in &glob.project.as_ref().unwrap().changes {
             store.append(&StringObject::new(c.name.as_str()));
         }
         store.append(&StringObject::new(""));
@@ -349,7 +381,8 @@ fn make_properties_pane() -> gtk4::Box {
 
         namefield.connect_map(|f| {
             let glob = get_glob();
-            f.set_text(&glob.project.changes[glob.selected_change_idx.unwrap()].name);
+            let idx = glob.selected_change_idx.unwrap();
+            f.set_text(&glob.project.as_ref().unwrap().changes[idx].name);
         });
 
         let rename_butt = Button::new();
@@ -367,7 +400,7 @@ fn make_properties_pane() -> gtk4::Box {
                 let mut glob = get_glob();
                 let idx = glob.selected_change_idx.unwrap();
 
-                glob.project.changes[idx].name = namefield.text().to_string();
+                glob.project.as_mut().unwrap().changes[idx].name = namefield.text().to_string();
             }
 
             win.lookup_action("set_state_loaded").expect("faild to get state loader").activate(None);

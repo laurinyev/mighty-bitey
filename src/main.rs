@@ -1,9 +1,10 @@
 use gtk4::{prelude::*, *};
 
-use crate::project::*;
+use crate::global::*;
 
 pub mod windows;
-pub mod project;
+pub mod global;
+pub mod patching;
 
 fn main() {
     let app = Application::builder()

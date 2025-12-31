@@ -1,6 +1,6 @@
 use gtk4::{prelude::*, *};
 
-use crate::project::*;
+use crate::global::*;
 
 fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWindow) -> gtk4::Box {
     //main layers
@@ -12,6 +12,19 @@ fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWind
     let inp_author = Entry::new();
     inp_author.set_placeholder_text(Some("Author"));
 
+    let store = gio::ListStore::new::<StringObject>();
+
+    store.append(&StringObject::new("Japanese"));
+    store.append(&StringObject::new("English 1.0"));
+    store.append(&StringObject::new("English 1.1"));
+    store.append(&StringObject::new("English 1.2"));
+    store.append(&StringObject::new("English 1.3"));
+
+    let baseromtype = DropDown::builder()
+        .name("ROM type")
+        .model(&store)
+        .selected(4)
+        .build();
 
     //close button
     let close = Button::with_label("Close");
@@ -31,15 +44,34 @@ fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWind
 
     let inp_name_clone = inp_name.clone();
     let inp_author_clone = inp_author.clone();
+    let baseromtype_clone = baseromtype.clone();
 
     cont.connect_clicked(move |_| {
         get_glob().create_proj(
             &inp_name_clone.text(),
             &inp_author_clone.text(),
-            ""
+            match baseromtype_clone.selected() {
+                0 => crate::patching::baserom::BaseromType::JP,
+                1 => crate::patching::baserom::BaseromType::En1_0_0,
+                2 => crate::patching::baserom::BaseromType::En1_1_0,
+                3 => crate::patching::baserom::BaseromType::En1_2_0,
+                4 => crate::patching::baserom::BaseromType::En1_3_0,
+                _ => crate::patching::baserom::BaseromType::En1_3_0
+            }
         );
 
-        mainwin.lookup_action("set_state_loaded").expect("faild to get state loader").activate(None);
+        let resp = alerta::alerta()
+            .title("Base ROM")
+            .message("You must load a base ROM for supplying default assets/values!")
+            .icon(alerta::Icon::Info)
+            .button_preset(alerta::ButtonPreset::OkCancel)
+            .show()
+            .expect("Couldn't show popup");
+
+        if resp == alerta::Answer::Button(0) { // 1 = OK button
+            mainwin.lookup_action("open_rom").expect("faild to get state loader").activate(None);
+        }
+
         popupwin.close();
     });
 
@@ -51,6 +83,7 @@ fn make_content(mainwin: gtk4::ApplicationWindow,popupwin: gtk4::ApplicationWind
 
     winchild.append(&inp_name);
     winchild.append(&inp_author);
+    winchild.append(&baseromtype);
     winchild.append(&bottombar);
     winchild.set_vexpand(true);
 
