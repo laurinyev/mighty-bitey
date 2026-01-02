@@ -1,0 +1,1 @@
+## Since this useless POS was going nowhere and I didnt do it right anyways I'm giving up and going home

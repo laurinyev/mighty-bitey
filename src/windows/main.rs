@@ -31,7 +31,7 @@ mod actions {
                     glob.baserom = Some(baserom.clone());
 
                     if baserom.hash != glob.project.as_ref().unwrap().baserom_type.get_expected_hash() {
-                        let resp = alerta::alerta()
+                        alerta::alerta()
                             .title("Base ROM hash mismatch")
                             .message(
                                 format!(
